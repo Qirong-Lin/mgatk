@@ -8,6 +8,7 @@ import sys
 import re
 import os
 import pysam
+import random
 import numpy as np
 from collections import defaultdict
 
@@ -40,7 +41,6 @@ def writeSparseMatrix(mid, vec):
 			if(vec[i] > 0):
 				V.write(str(i+1)+","+sample+","+str(vec[i])+"\n")
 
-
 def writeSparseMatrix2(mid, vec1, vec2):
 	with open(outpre + "."+mid+".txt","w") as V:
 		for i in range(0,int(maxBP)):
@@ -53,6 +53,43 @@ def writeSparseMatrix4(mid, vec1, vec2, vec3, vec4):
 			if(vec1[i] > 0 or vec3[i] > 0):
 				V.write(str(i+1)+","+sample+","+str(vec1[i])+","+str(vec2[i])+","+str(vec3[i])+","+str(vec4[i])+"\n")
 
+def findHighQualityBases(fwd_read, rev_read):
+    # Step 1: Find the start and end ref positions of the overlap
+    overlap_start = max(fwd_read.reference_start, rev_read.reference_start)
+    overlap_end = min(fwd_read.reference_end, rev_read.reference_end)
+
+    # Ensure there is an overlap
+    if overlap_start >= overlap_end:
+        return [], []
+
+    # Get aligned pairs for forward and reverse reads
+    fwd_pairs = fwd_read.get_aligned_pairs(matches_only=True)
+    rev_pairs = rev_read.get_aligned_pairs(matches_only=True)
+
+    # Step 2, 3, 4: Find which read has a higher base quality at each overlapping ref position
+    fwd_overlap_use_idx = []
+    rev_overlap_use_idx = []
+
+    for ref_pos in range(overlap_start, overlap_end):
+        fwd_read_pos = next((rp for rp, rpos in fwd_pairs if rpos == ref_pos), None)
+        rev_read_pos = next((rp for rp, rpos in rev_pairs if rpos == ref_pos), None)
+
+        if fwd_read_pos is not None and rev_read_pos is not None:
+            fwd_base_qual = fwd_read.query_qualities[fwd_read_pos]
+            rev_base_qual = rev_read.query_qualities[rev_read_pos]
+
+            if fwd_base_qual > rev_base_qual:
+                fwd_overlap_use_idx.append(ref_pos)
+            elif fwd_base_qual < rev_base_qual:
+                rev_overlap_use_idx.append(ref_pos)
+            else:
+                # Randomly assign if qualities are equal
+                if random.choice([True, False]):
+                    fwd_overlap_use_idx.append(ref_pos)
+                else:
+                    rev_overlap_use_idx.append(ref_pos)
+
+    return fwd_overlap_use_idx, rev_overlap_use_idx
 
 n = int(maxBP)
 
@@ -105,86 +142,31 @@ for read_name in ordered_bam2:
 	
 	# check alignment quality
 	if fwd_align_qual_read > alignment_quality and rev_align_qual_read > alignment_quality:
-			# if reverse strand is included in the forward strand, only keep the forward strand and discard reverse strand
-			# (skipped) if reverse strand is included in the forward strand, partition the pair into fwd-only, overlap, and fwd-only
-		if fwd_read.reference_start < rev_read.reference_start and fwd_read.reference_end > rev_read.reference_end:
-			overlap_length = fwd_read.get_overlap(rev_read.reference_start, rev_read.reference_end)
-			# in this case, the overlap length must be greater than 0
-			fwd_only_5prime_end = rev_read.reference_start - fwd_read.reference_start
-			fwd_only_3prime_start = rev_read.reference_end - fwd_read.reference_start 
-			fwd_overlap_quality = fwd_quality[fwd_only_5prime_end:fwd_only_3prime_start]
-			rev_overlap_quality = rev_quality
-			if len(fwd_overlap_quality) != len(rev_overlap_quality):
-				fwd_use_idx = np.array([])
-				rev_use_idx = np.array([])
-			else:
-				fwd_overlap_use_idx = np.where(fwd_overlap_quality > rev_overlap_quality)[0]
-				rev_overlap_use_idx = np.where(fwd_overlap_quality < rev_overlap_quality)[0]
-				
-				# evenly assign bases with equal quality in overlap region
-				equal_overlap_idx = np.where(fwd_overlap_quality == rev_overlap_quality)[0]
-				equal_split = int(np.floor(len(equal_overlap_idx)/2))
-				fwd_overlap_use_idx = np.concatenate([fwd_overlap_use_idx, equal_overlap_idx[:equal_split]])
-				rev_overlap_use_idx = np.concatenate([rev_overlap_use_idx, equal_overlap_idx[equal_split:]])
-
+		overlap_start = max(fwd_read.reference_start, rev_read.reference_start)
+		overlap_end = min(fwd_read.reference_end, rev_read.reference_end)	
+		if overlap_start >= overlap_end:
+			fwd_use_idx = np.arange(fwd_read.reference_start, fwd_read.reference_end)
+			rev_use_idx = np.arange(rev_read.reference_start, rev_read.reference_end)
+		else:
+			fwd_overlap_use_idx, rev_overlap_use_idx = findHighQualityBases(fwd_read, rev_read)
+			
+			# if reverse strand is included in the forward strand, partition the pair into fwd-only, overlap, and fwd-only
+			if fwd_read.reference_start < rev_read.reference_start and fwd_read.reference_end > rev_read.reference_end:
 				# merge the exclusive region and use idx in overlap region
-				fwd_use_idx = np.concatenate([np.arange(fwd_only_5prime_end), fwd_overlap_use_idx + fwd_only_5prime_end, np.arange(fwd_only_3prime_start, len(fwd_seq))])
+				fwd_use_idx = np.concatenate([np.arange(fwd_read.reference_start, overlap_start), fwd_overlap_use_idx, np.arange(overlap_end, fwd_read.reference_end)])
 				rev_use_idx = rev_overlap_use_idx
 
-			# if forward strand is included in the reverse strand, only keep the reverse strand and ignore the forward strand
-			# (skipped) if forward strand is included in the reverse strand, partition the pair into rev-only, overlap, and rev-only
-		elif fwd_read.reference_start > rev_read.reference_start and fwd_read.reference_end < rev_read.reference_end:
-			overlap_length = rev_read.get_overlap(fwd_read.reference_start, fwd_read.reference_end)
-			# in this case, the overlap length must be greater than 0
-			rev_only_5prime_end = fwd_read.reference_start - rev_read.reference_start
-			rev_only_3prime_start = fwd_read.reference_end - rev_read.reference_start
-			fwd_overlap_quality = fwd_quality
-			rev_overlap_quality = rev_quality[rev_only_5prime_end:rev_only_3prime_start]
-			if len(fwd_overlap_quality) != len(rev_overlap_quality):
-				fwd_use_idx = np.array([])
-				rev_use_idx = np.array([])
-			else:
-				fwd_overlap_use_idx = np.where(fwd_overlap_quality > rev_overlap_quality)[0]
-				rev_overlap_use_idx = np.where(fwd_overlap_quality < rev_overlap_quality)[0]
-
-				# evenly assign bases with equal quality in overlap region
-				equal_overlap_idx = np.where(fwd_overlap_quality == rev_overlap_quality)[0]
-				equal_split = int(np.floor(len(equal_overlap_idx)/2))
-				fwd_overlap_use_idx = np.concatenate([fwd_overlap_use_idx, equal_overlap_idx[:equal_split]])
-				rev_overlap_use_idx = np.concatenate([rev_overlap_use_idx, equal_overlap_idx[equal_split:]])
-
-				# merge the exclusive region and use idx in overlap region
+			# if forward strand is included in the reverse strand, partition the pair into rev-only, overlap, and rev-only
+			elif fwd_read.reference_start > rev_read.reference_start and fwd_read.reference_end < rev_read.reference_end:
 				fwd_use_idx = fwd_overlap_use_idx
-				rev_use_idx = np.concatenate([np.arange(rev_only_5prime_end), rev_overlap_use_idx + rev_only_5prime_end, np.arange(rev_only_3prime_start, len(rev_seq))])
+				rev_use_idx = np.concatenate([np.arange(rev_read.reference_start, overlap_start), rev_overlap_use_idx, np.arange(overlap_end, rev_read.reference_end)])
 
-		else:
-		# partition the pair into fwd-only, overlap, and rev-only
-			overlap_length = fwd_read.get_overlap(rev_read.reference_start, rev_read.reference_end)
-			if overlap_length == 0:
-				fwd_use_idx = np.arange(len(fwd_seq))
-				rev_use_idx = np.arange(len(rev_seq))
 			else:
-				# choose which strand to use in the overlap region based on quality score
-				fwd_only_end = len(fwd_seq) - overlap_length
-				rev_only_start = overlap_length
-				fwd_overlap_quality = fwd_quality[fwd_only_end:]
-				rev_overlap_quality = rev_quality[:rev_only_start]
-				if len(fwd_overlap_quality) != len(rev_overlap_quality):
-					fwd_use_idx = np.array([])
-					rev_use_idx = np.array([])
-				else:
-					fwd_overlap_use_idx = np.where(fwd_overlap_quality > rev_overlap_quality)[0]
-					rev_overlap_use_idx = np.where(fwd_overlap_quality < rev_overlap_quality)[0]
-				
-					# evenly assign bases with equal quality in overlap region
-					equal_overlap_idx = np.where(fwd_overlap_quality == rev_overlap_quality)[0]
-					equal_split = int(np.floor(len(equal_overlap_idx)/2))
-					fwd_overlap_use_idx = np.concatenate([fwd_overlap_use_idx, equal_overlap_idx[:equal_split]])
-					rev_overlap_use_idx = np.concatenate([rev_overlap_use_idx, equal_overlap_idx[equal_split:]])
-		
-					# merge the exclusive region and use idx in overlap region
-					fwd_use_idx = np.concatenate([np.arange(fwd_only_end), fwd_overlap_use_idx + fwd_only_end])
-					rev_use_idx = np.concatenate([rev_overlap_use_idx, np.arange(rev_only_start, len(rev_seq))])
+			# partition the pair into fwd-only, overlap, and rev-only
+			# merge the exclusive region and use idx in overlap region
+				fwd_use_idx = np.concatenate([np.arange(fwd_read.reference_start, overlap_start), fwd_overlap_use_idx])
+				rev_use_idx = np.concatenate([rev_overlap_use_idx, np.arange(overlap_end, rev_read.reference_end)])
+
 	elif fwd_align_qual_read <= alignment_quality and rev_align_qual_read <= alignment_quality:
 		# use none for either
 		fwd_use_idx = np.array([])
@@ -192,19 +174,20 @@ for read_name in ordered_bam2:
 	
 	elif fwd_align_qual_read > alignment_quality and rev_align_qual_read <= alignment_quality:
 		# use none of rev and all of fwd
-		fwd_use_idx = np.arange(len(fwd_seq))
+		fwd_use_idx = np.arange(fwd_read.reference_start, fwd_read.reference_end)
 		rev_use_idx = np.array([])
 	
 	elif fwd_align_qual_read <= alignment_quality and rev_align_qual_read > alignment_quality:
 		# use all of rev and none of fwd
 		fwd_use_idx = np.array([])
-		rev_use_idx = np.arange(len(rev_seq))
+		rev_use_idx = np.arange(rev_read.reference_start, rev_read.reference_end)
 
 
+	# since mgatk will not handle indels anyway, we will use refpos instead of qpos in the fwd_use_idx and rev_use_idx.
 
-	# handle fwd region
+	# handle fwd region, use refpos (pair[1]) instead of qpos (pair[0])
 	fwd_aligned_pairs = fwd_read.get_aligned_pairs(True)
-	fwd_region = [pair for pair in fwd_aligned_pairs if pair[0] in fwd_use_idx]
+	fwd_region = [pair for pair in fwd_aligned_pairs if pair[1] in fwd_use_idx]
 	for qpos, refpos in fwd_region:
 		if refpos is not None and fwd_quality[qpos] > base_qual:
 			if fwd_seq[qpos] == "A":
@@ -220,9 +203,9 @@ for read_name in ordered_bam2:
 				qualT_fw[refpos] += fwd_quality[qpos]
 				countsT_fw[refpos] += 1
 	
-	# handle rev region
+	# handle rev region, use refpos (pair[1]) instead of qpos (pair[0])
 	rev_aligned_pairs = rev_read.get_aligned_pairs(True)
-	rev_region = [pair for pair in rev_aligned_pairs if pair[0] in rev_use_idx]
+	rev_region = [pair for pair in rev_aligned_pairs if pair[1] in rev_use_idx]
 	for qpos, refpos in rev_region:
 		if refpos is not None and rev_quality[qpos] > base_qual:
 			if rev_seq[qpos] == "A":
