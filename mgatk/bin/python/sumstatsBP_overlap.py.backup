@@ -21,18 +21,6 @@ fasta_file = sys.argv[7]
 alignment_quality = float(sys.argv[8])
 emit_base_qualities = sys.argv[9]
 
-# bamfile= "/mnt/cache/test_largest/AAACAGCAGTCTGCTA-1.bam"
-# bamfile= "/mnt/cache/test_largest/GTAAGGGTTGTACGCA-1.bam"
-# outpre = "/mnt/cache/test_largest/sumstatsBP_overlap"
-# mito_genome = "/mnt/cache/test_largest/c2265_atac_sec1_mgatk_out_ho_ub_jm512_latencywait60/fasta/chrM.fasta"
-# maxBP = 16569
-# base_qual = 20
-# sample = "test_largest"
-# fasta_file = "/mnt/cache/test_largest/c2265_atac_sec1_mgatk_out_ho_ub_jm512_latencywait60/fasta/chrM.fasta"
-# alignment_quality = 20
-# emit_base_qualities = "True"
-
-
 # Export Functions
 def writeSparseMatrix(mid, vec):
 	with open(outpre + "."+mid+".txt","w") as V:
@@ -105,86 +93,30 @@ for read_name in ordered_bam2:
 	
 	# check alignment quality
 	if fwd_align_qual_read > alignment_quality and rev_align_qual_read > alignment_quality:
-			# if reverse strand is included in the forward strand, only keep the forward strand and discard reverse strand
-			# (skipped) if reverse strand is included in the forward strand, partition the pair into fwd-only, overlap, and fwd-only
-		if fwd_read.reference_start < rev_read.reference_start and fwd_read.reference_end > rev_read.reference_end:
-			overlap_length = fwd_read.get_overlap(rev_read.reference_start, rev_read.reference_end)
-			# in this case, the overlap length must be greater than 0
-			fwd_only_5prime_end = rev_read.reference_start - fwd_read.reference_start
-			fwd_only_3prime_start = rev_read.reference_end - fwd_read.reference_start 
-			fwd_overlap_quality = fwd_quality[fwd_only_5prime_end:fwd_only_3prime_start]
-			rev_overlap_quality = rev_quality
-			if len(fwd_overlap_quality) != len(rev_overlap_quality):
-				fwd_use_idx = np.array([])
-				rev_use_idx = np.array([])
-			else:
-				fwd_overlap_use_idx = np.where(fwd_overlap_quality > rev_overlap_quality)[0]
-				rev_overlap_use_idx = np.where(fwd_overlap_quality < rev_overlap_quality)[0]
-				
-				# evenly assign bases with equal quality in overlap region
-				equal_overlap_idx = np.where(fwd_overlap_quality == rev_overlap_quality)[0]
-				equal_split = int(np.floor(len(equal_overlap_idx)/2))
-				fwd_overlap_use_idx = np.concatenate([fwd_overlap_use_idx, equal_overlap_idx[:equal_split]])
-				rev_overlap_use_idx = np.concatenate([rev_overlap_use_idx, equal_overlap_idx[equal_split:]])
-
-				# merge the exclusive region and use idx in overlap region
-				fwd_use_idx = np.concatenate([np.arange(fwd_only_5prime_end), fwd_overlap_use_idx + fwd_only_5prime_end, np.arange(fwd_only_3prime_start, len(fwd_seq))])
-				rev_use_idx = rev_overlap_use_idx
-
-			# if forward strand is included in the reverse strand, only keep the reverse strand and ignore the forward strand
-			# (skipped) if forward strand is included in the reverse strand, partition the pair into rev-only, overlap, and rev-only
-		elif fwd_read.reference_start > rev_read.reference_start and fwd_read.reference_end < rev_read.reference_end:
-			overlap_length = rev_read.get_overlap(fwd_read.reference_start, fwd_read.reference_end)
-			# in this case, the overlap length must be greater than 0
-			rev_only_5prime_end = fwd_read.reference_start - rev_read.reference_start
-			rev_only_3prime_start = fwd_read.reference_end - rev_read.reference_start
-			fwd_overlap_quality = fwd_quality
-			rev_overlap_quality = rev_quality[rev_only_5prime_end:rev_only_3prime_start]
-			if len(fwd_overlap_quality) != len(rev_overlap_quality):
-				fwd_use_idx = np.array([])
-				rev_use_idx = np.array([])
-			else:
-				fwd_overlap_use_idx = np.where(fwd_overlap_quality > rev_overlap_quality)[0]
-				rev_overlap_use_idx = np.where(fwd_overlap_quality < rev_overlap_quality)[0]
-
-				# evenly assign bases with equal quality in overlap region
-				equal_overlap_idx = np.where(fwd_overlap_quality == rev_overlap_quality)[0]
-				equal_split = int(np.floor(len(equal_overlap_idx)/2))
-				fwd_overlap_use_idx = np.concatenate([fwd_overlap_use_idx, equal_overlap_idx[:equal_split]])
-				rev_overlap_use_idx = np.concatenate([rev_overlap_use_idx, equal_overlap_idx[equal_split:]])
-
-				# merge the exclusive region and use idx in overlap region
-				fwd_use_idx = fwd_overlap_use_idx
-				rev_use_idx = np.concatenate([np.arange(rev_only_5prime_end), rev_overlap_use_idx + rev_only_5prime_end, np.arange(rev_only_3prime_start, len(rev_seq))])
-
-		else:
 		# partition the pair into fwd-only, overlap, and rev-only
-			overlap_length = fwd_read.get_overlap(rev_read.reference_start, rev_read.reference_end)
-			if overlap_length == 0:
-				fwd_use_idx = np.arange(len(fwd_seq))
-				rev_use_idx = np.arange(len(rev_seq))
-			else:
-				# choose which strand to use in the overlap region based on quality score
-				fwd_only_end = len(fwd_seq) - overlap_length
-				rev_only_start = overlap_length
-				fwd_overlap_quality = fwd_quality[fwd_only_end:]
-				rev_overlap_quality = rev_quality[:rev_only_start]
-				if len(fwd_overlap_quality) != len(rev_overlap_quality):
-					fwd_use_idx = np.array([])
-					rev_use_idx = np.array([])
-				else:
-					fwd_overlap_use_idx = np.where(fwd_overlap_quality > rev_overlap_quality)[0]
-					rev_overlap_use_idx = np.where(fwd_overlap_quality < rev_overlap_quality)[0]
-				
-					# evenly assign bases with equal quality in overlap region
-					equal_overlap_idx = np.where(fwd_overlap_quality == rev_overlap_quality)[0]
-					equal_split = int(np.floor(len(equal_overlap_idx)/2))
-					fwd_overlap_use_idx = np.concatenate([fwd_overlap_use_idx, equal_overlap_idx[:equal_split]])
-					rev_overlap_use_idx = np.concatenate([rev_overlap_use_idx, equal_overlap_idx[equal_split:]])
-		
-					# merge the exclusive region and use idx in overlap region
-					fwd_use_idx = np.concatenate([np.arange(fwd_only_end), fwd_overlap_use_idx + fwd_only_end])
-					rev_use_idx = np.concatenate([rev_overlap_use_idx, np.arange(rev_only_start, len(rev_seq))])
+		overlap_length = fwd_read.get_overlap(rev_read.reference_start, rev_read.reference_end)
+		if overlap_length == 0:
+			fwd_use_idx = np.arange(len(fwd_seq))
+			rev_use_idx = np.arange(len(rev_seq))
+		else:
+			# choose which strand to use in the overlap region based on quality score
+			fwd_only_end = len(fwd_seq) - overlap_length
+			rev_only_start = overlap_length
+			fwd_overlap_quality = fwd_quality[fwd_only_end:]
+			rev_overlap_quality = rev_quality[:rev_only_start]
+			fwd_overlap_use_idx = np.where(fwd_overlap_quality > rev_overlap_quality)[0]
+			rev_overlap_use_idx = np.where(fwd_overlap_quality < rev_overlap_quality)[0]
+			
+			# evenly assign bases with equal quality in overlap region
+			equal_overlap_idx = np.where(fwd_overlap_quality == rev_overlap_quality)[0]
+			equal_split = int(np.floor(len(equal_overlap_idx)/2))
+			fwd_overlap_use_idx = np.concatenate([fwd_overlap_use_idx, equal_overlap_idx[:equal_split]])
+			rev_overlap_use_idx = np.concatenate([rev_overlap_use_idx, equal_overlap_idx[equal_split:]])
+
+			# merge the exclusive region and use idx in overlap region
+			fwd_use_idx = np.concatenate([np.arange(fwd_only_end), fwd_overlap_use_idx + fwd_only_end])
+			rev_use_idx = np.concatenate([rev_overlap_use_idx, np.arange(rev_only_start, len(rev_seq))])
+	
 	elif fwd_align_qual_read <= alignment_quality and rev_align_qual_read <= alignment_quality:
 		# use none for either
 		fwd_use_idx = np.array([])
@@ -199,9 +131,7 @@ for read_name in ordered_bam2:
 		# use all of rev and none of fwd
 		fwd_use_idx = np.array([])
 		rev_use_idx = np.arange(len(rev_seq))
-
-
-
+	
 	# handle fwd region
 	fwd_aligned_pairs = fwd_read.get_aligned_pairs(True)
 	fwd_region = [pair for pair in fwd_aligned_pairs if pair[0] in fwd_use_idx]
