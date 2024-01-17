@@ -54,42 +54,46 @@ def writeSparseMatrix4(mid, vec1, vec2, vec3, vec4):
 				V.write(str(i+1)+","+sample+","+str(vec1[i])+","+str(vec2[i])+","+str(vec3[i])+","+str(vec4[i])+"\n")
 
 def findHighQualityBases(fwd_read, rev_read):
-    # Step 1: Find the start and end ref positions of the overlap
-    overlap_start = max(fwd_read.reference_start, rev_read.reference_start)
-    overlap_end = min(fwd_read.reference_end, rev_read.reference_end)
+	# Step 1: Find the start and end ref positions of the overlap
+	overlap_start = max(fwd_read.reference_start, rev_read.reference_start)
+	overlap_end = min(fwd_read.reference_end, rev_read.reference_end)
 
-    # Ensure there is an overlap
-    if overlap_start >= overlap_end:
-        return [], []
+	# Ensure there is an overlap
+	if overlap_start >= overlap_end:
+		return [], []
 
-    # Get aligned pairs for forward and reverse reads
-    fwd_pairs = fwd_read.get_aligned_pairs(matches_only=True)
-    rev_pairs = rev_read.get_aligned_pairs(matches_only=True)
+	# Get aligned pairs for forward and reverse reads
+	fwd_pairs = fwd_read.get_aligned_pairs(matches_only=True)
+	rev_pairs = rev_read.get_aligned_pairs(matches_only=True)
 
-    # Step 2, 3, 4: Find which read has a higher base quality at each overlapping ref position
-    fwd_overlap_use_idx = []
-    rev_overlap_use_idx = []
+	# Step 2, 3, 4: Find which read has a higher base quality at each overlapping ref position
+	fwd_overlap_use_idx = []
+	rev_overlap_use_idx = []
 
-    for ref_pos in range(overlap_start, overlap_end):
-        fwd_read_pos = next((rp for rp, rpos in fwd_pairs if rpos == ref_pos), None)
-        rev_read_pos = next((rp for rp, rpos in rev_pairs if rpos == ref_pos), None)
+	for ref_pos in range(overlap_start, overlap_end):
+		fwd_read_pos = next((rp for rp, rpos in fwd_pairs if rpos == ref_pos), None)
+		rev_read_pos = next((rp for rp, rpos in rev_pairs if rpos == ref_pos), None)
 
-        if fwd_read_pos is not None and rev_read_pos is not None:
-            fwd_base_qual = fwd_read.query_qualities[fwd_read_pos]
-            rev_base_qual = rev_read.query_qualities[rev_read_pos]
+		if fwd_read_pos is not None and rev_read_pos is not None:
+			fwd_base_qual = fwd_read.query_qualities[fwd_read_pos]
+			rev_base_qual = rev_read.query_qualities[rev_read_pos]
 
-            if fwd_base_qual > rev_base_qual:
-                fwd_overlap_use_idx.append(ref_pos)
-            elif fwd_base_qual < rev_base_qual:
-                rev_overlap_use_idx.append(ref_pos)
-            else:
-                # Randomly assign if qualities are equal
-                if random.choice([True, False]):
-                    fwd_overlap_use_idx.append(ref_pos)
-                else:
-                    rev_overlap_use_idx.append(ref_pos)
+			# randomly choose one if the base qualities are the same
+			# or choose the one with higher base quality
+			if (
+				fwd_base_qual == rev_base_qual
+				and random.choice([True, False])
+				or fwd_base_qual > rev_base_qual
+			):
+				fwd_overlap_use_idx.append(ref_pos)
+			else:
+				rev_overlap_use_idx.append(ref_pos)
+		elif fwd_read_pos is None and rev_read_pos is not None:
+			rev_overlap_use_idx.append(ref_pos)
+		elif fwd_read_pos is not None and rev_read_pos is None:
+			fwd_overlap_use_idx.append(ref_pos)
 
-    return fwd_overlap_use_idx, rev_overlap_use_idx
+		return fwd_overlap_use_idx, rev_overlap_use_idx
 
 n = int(maxBP)
 
@@ -144,9 +148,12 @@ for read_name in ordered_bam2:
 	if fwd_align_qual_read > alignment_quality and rev_align_qual_read > alignment_quality:
 		overlap_start = max(fwd_read.reference_start, rev_read.reference_start)
 		overlap_end = min(fwd_read.reference_end, rev_read.reference_end)	
+
+		# if there is no overlap, use all of fwd and rev
 		if overlap_start >= overlap_end:
 			fwd_use_idx = np.arange(fwd_read.reference_start, fwd_read.reference_end)
 			rev_use_idx = np.arange(rev_read.reference_start, rev_read.reference_end)
+		# if there is an overlap, use the high quality bases in the overlap region
 		else:
 			fwd_overlap_use_idx, rev_overlap_use_idx = findHighQualityBases(fwd_read, rev_read)
 			
