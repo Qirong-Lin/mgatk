@@ -12,26 +12,26 @@ import random
 import numpy as np
 from collections import defaultdict
 
-#bamfile = sys.argv[1]
-#outpre = sys.argv[2]
-#mito_genome = sys.argv[3]
-#maxBP = sys.argv[4]
-#base_qual = float(sys.argv[5])
-#sample = sys.argv[6]
-#fasta_file = sys.argv[7]
-#alignment_quality = float(sys.argv[8])
-#emit_base_qualities = sys.argv[9]
+bamfile = sys.argv[1]
+outpre = sys.argv[2]
+mito_genome = sys.argv[3]
+maxBP = sys.argv[4]
+base_qual = float(sys.argv[5])
+sample = sys.argv[6]
+fasta_file = sys.argv[7]
+alignment_quality = float(sys.argv[8])
+emit_base_qualities = sys.argv[9]
 
 # bamfile= "/mnt/cache/test_largest/AAACAGCAGTCTGCTA-1.bam"
-bamfile= "/mnt/cache/test_largest/GTAAGGGTTGTACGCA-1.bam"
-outpre = "/mnt/cache/test_largest/sumstatsBP_overlap"
-mito_genome = "/mnt/cache/test_largest/c2265_atac_sec1_mgatk_out_ho_ub_jm512_latencywait60/fasta/chrM.fasta"
-maxBP = 16569
-base_qual = 20
-sample = "test_largest"
-fasta_file = "/mnt/cache/test_largest/c2265_atac_sec1_mgatk_out_ho_ub_jm512_latencywait60/fasta/chrM.fasta"
-alignment_quality = 20
-emit_base_qualities = "True"
+# bamfile= "/mnt/cache/test_largest/GTAAGGGTTGTACGCA-1.bam"
+# outpre = "/mnt/cache/test_largest/sumstatsBP_overlap"
+# mito_genome = "/mnt/cache/test_largest/c2265_atac_sec1_mgatk_out_ho_ub_jm512_latencywait60/fasta/chrM.fasta"
+# maxBP = 16569
+# base_qual = 20
+# sample = "test_largest"
+# fasta_file = "/mnt/cache/test_largest/c2265_atac_sec1_mgatk_out_ho_ub_jm512_latencywait60/fasta/chrM.fasta"
+# alignment_quality = 20
+# emit_base_qualities = "True"
 
 
 # Export Functions
