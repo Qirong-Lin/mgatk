@@ -12,26 +12,26 @@ import random
 import numpy as np
 from collections import defaultdict
 
-bamfile = sys.argv[1]
-outpre = sys.argv[2]
-mito_genome = sys.argv[3]
-maxBP = sys.argv[4]
-base_qual = float(sys.argv[5])
-sample = sys.argv[6]
-fasta_file = sys.argv[7]
-alignment_quality = float(sys.argv[8])
-emit_base_qualities = sys.argv[9]
+#bamfile = sys.argv[1]
+#outpre = sys.argv[2]
+#mito_genome = sys.argv[3]
+#maxBP = sys.argv[4]
+#base_qual = float(sys.argv[5])
+#sample = sys.argv[6]
+#fasta_file = sys.argv[7]
+#alignment_quality = float(sys.argv[8])
+#emit_base_qualities = sys.argv[9]
 
 # bamfile= "/mnt/cache/test_largest/AAACAGCAGTCTGCTA-1.bam"
-# bamfile= "/mnt/cache/test_largest/GTAAGGGTTGTACGCA-1.bam"
-# outpre = "/mnt/cache/test_largest/sumstatsBP_overlap"
-# mito_genome = "/mnt/cache/test_largest/c2265_atac_sec1_mgatk_out_ho_ub_jm512_latencywait60/fasta/chrM.fasta"
-# maxBP = 16569
-# base_qual = 20
-# sample = "test_largest"
-# fasta_file = "/mnt/cache/test_largest/c2265_atac_sec1_mgatk_out_ho_ub_jm512_latencywait60/fasta/chrM.fasta"
-# alignment_quality = 20
-# emit_base_qualities = "True"
+bamfile= "/mnt/cache/test_largest/GTAAGGGTTGTACGCA-1.bam"
+outpre = "/mnt/cache/test_largest/sumstatsBP_overlap"
+mito_genome = "/mnt/cache/test_largest/c2265_atac_sec1_mgatk_out_ho_ub_jm512_latencywait60/fasta/chrM.fasta"
+maxBP = 16569
+base_qual = 20
+sample = "test_largest"
+fasta_file = "/mnt/cache/test_largest/c2265_atac_sec1_mgatk_out_ho_ub_jm512_latencywait60/fasta/chrM.fasta"
+alignment_quality = 20
+emit_base_qualities = "True"
 
 
 # Export Functions
@@ -53,26 +53,18 @@ def writeSparseMatrix4(mid, vec1, vec2, vec3, vec4):
 			if(vec1[i] > 0 or vec3[i] > 0):
 				V.write(str(i+1)+","+sample+","+str(vec1[i])+","+str(vec2[i])+","+str(vec3[i])+","+str(vec4[i])+"\n")
 
-def findHighQualityBases(fwd_read, rev_read):
-	# Step 1: Find the start and end ref positions of the overlap
-	overlap_start = max(fwd_read.reference_start, rev_read.reference_start)
-	overlap_end = min(fwd_read.reference_end, rev_read.reference_end)
-
-	# Ensure there is an overlap
-	if overlap_start >= overlap_end:
-		return [], []
-
+def findHighQualityBases(fwd_read, rev_read, overlap_start, overlap_end):
 	# Get aligned pairs for forward and reverse reads
 	fwd_pairs = fwd_read.get_aligned_pairs(matches_only=True)
 	rev_pairs = rev_read.get_aligned_pairs(matches_only=True)
 
-	# Step 2, 3, 4: Find which read has a higher base quality at each overlapping ref position
+	# Find which read has a higher base quality at each overlapping ref position
 	fwd_overlap_use_idx = []
 	rev_overlap_use_idx = []
 
 	for ref_pos in range(overlap_start, overlap_end):
-		fwd_read_pos = next((rp for rp, rpos in fwd_pairs if rpos == ref_pos), None)
-		rev_read_pos = next((rp for rp, rpos in rev_pairs if rpos == ref_pos), None)
+		fwd_read_pos = next((qp for qp, rpos in fwd_pairs if rpos == ref_pos), None)
+		rev_read_pos = next((qp for qp, rpos in rev_pairs if rpos == ref_pos), None)
 
 		if fwd_read_pos is not None and rev_read_pos is not None:
 			fwd_base_qual = fwd_read.query_qualities[fwd_read_pos]
@@ -81,8 +73,8 @@ def findHighQualityBases(fwd_read, rev_read):
 			# randomly choose one if the base qualities are the same
 			# or choose the one with higher base quality
 			if (
-				fwd_base_qual == rev_base_qual
-				and random.choice([True, False])
+				(fwd_base_qual == rev_base_qual
+				and random.choice([True, False]))
 				or fwd_base_qual > rev_base_qual
 			):
 				fwd_overlap_use_idx.append(ref_pos)
@@ -121,8 +113,10 @@ qualT_rev = [0.0] * n
 # organize reads into a dict where key is readname
 bam2 = [x for x in pysam.AlignmentFile(bamfile, "rb")]
 ordered_bam2 = defaultdict(list)
+
 for read in bam2:
 	ordered_bam2[read.query_name].append(read)
+
 
 for read_name in ordered_bam2:
 	# disregard singlets and multiplets
@@ -143,6 +137,8 @@ for read_name in ordered_bam2:
 	fwd_seq, rev_seq = fwd_read.query_sequence, rev_read.query_sequence
 	fwd_quality, rev_quality = np.array(fwd_read.query_qualities), np.array(rev_read.query_qualities)
 	fwd_align_qual_read, rev_align_qual_read = fwd_read.mapping_quality, rev_read.mapping_quality
+	#print(type(fwd_align_qual_read))  
+	#sys.exit(0)
 	
 	# check alignment quality
 	if fwd_align_qual_read > alignment_quality and rev_align_qual_read > alignment_quality:
@@ -155,7 +151,7 @@ for read_name in ordered_bam2:
 			rev_use_idx = np.arange(rev_read.reference_start, rev_read.reference_end)
 		# if there is an overlap, use the high quality bases in the overlap region
 		else:
-			fwd_overlap_use_idx, rev_overlap_use_idx = findHighQualityBases(fwd_read, rev_read)
+			fwd_overlap_use_idx, rev_overlap_use_idx = findHighQualityBases(fwd_read, rev_read, overlap_start=overlap_start, overlap_end=overlap_end)
 			
 			# if reverse strand is included in the forward strand, partition the pair into fwd-only, overlap, and fwd-only
 			if fwd_read.reference_start < rev_read.reference_start and fwd_read.reference_end > rev_read.reference_end:
